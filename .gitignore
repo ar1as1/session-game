@@ -1,1 +1,10 @@
 .env
+node_modules/
+lib/
+out/
+cache/
+broadcast/
+active_session.json
+witness.wtns
+*.wtns
+sessionKey_0.zkey
