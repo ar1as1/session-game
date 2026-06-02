@@ -78,7 +78,7 @@ foundry >= 1.5.1
 
 ### Install
 ```bash
-git clone https://github.com/YOUR_USERNAME/session-game
+git clone https://github.com/ar1as1/session-game
 cd session-game
 npm install
 ```
