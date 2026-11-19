@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 
-const VALIDATOR = "0xc5655348C4E6e77AFF2BBb03A5758CaC205347Cf";
+const VALIDATOR = "0x5c2736F56506526e76E40D88981E4E41B0FA8807";
 const SEPOLIA_RPC = "https://sepolia.drpc.org";
 
 const VALIDATOR_ABI = [
-  "function createSession(address,uint256,uint256,bytes32,bool)",
+  "function createSession(address,uint256,uint256,bytes32,uint256,bool)",
   "function revokeSession(address)",
   "function sessionStatus(address,address) view returns (bool,uint256,uint256,uint256)"
 ];
@@ -62,7 +62,7 @@ export default function App() {
 
       addLog("info", "creating session — 1 popup only...");
       const tx = await contract.createSession(
-        sessionWallet.address, durationSec, spendLimit, merkleRoot, false
+        sessionWallet.address, durationSec, spendLimit, merkleRoot, 0, false
       );
       addLog("info", "waiting for tx: " + tx.hash.slice(0,18) + "...");
       await tx.wait();

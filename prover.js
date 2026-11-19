@@ -9,7 +9,7 @@ const VKEY_PATH  = './verification_key.json';
 const SESSION_FILE = './active_session.json';
 
 const VALIDATOR_ABI = [
-  'function createSession(address sessionKey, uint256 durationSec, uint256 spendLimit, bytes32 merkleRoot, bool requireZKProof)',
+  'function createSession(address sessionKey, uint256 durationSec, uint256 spendLimit, bytes32 merkleRoot, uint256 commitment, bool requireZKProof)',
   'function revokeSession(address sessionKey)',
   'function sessionStatus(address wallet, address sessionKey) view returns (bool valid, uint256 remainingSec, uint256 remainingWei, uint256 spentWei)',
 ];
@@ -54,6 +54,7 @@ export class Prover {
     const leaves     = this.#padLeaves(allowedContracts.map(c => this.#ph([BigInt(c)])));
     const merkleRoot = this.#buildRoot(leaves);
     const merkleRootBytes32 = ethers.zeroPadValue(ethers.toBeHex(merkleRoot), 32);
+    const commitmentBytes32 = ethers.zeroPadValue(ethers.toBeHex(commitment), 32);
 
     const contract = new ethers.Contract(this.#validator, VALIDATOR_ABI, masterSigner);
     console.log('[Prover] Creating session — 1 popup only...');
@@ -62,6 +63,7 @@ export class Prover {
       durationSec,
       spendLimitWei,
       merkleRootBytes32,
+      commitmentBytes32,
       requireZKProof
     );
     await tx.wait();
@@ -185,7 +187,7 @@ export class Prover {
       expiry:       Math.floor(s.expiresAt / 1000).toString(),
       spendLimit:   s.spendLimitWei,
       spentSoFar:   s.spentSoFar,
-      targetLeaf:   this.#ph([BigInt(targetContract)]).toString(),
+      targetContract: BigInt(targetContract).toString(),
       pathElements: proof.pathElements.map(x => x.toString()),
       pathIndices:  proof.pathIndices.map(x => x.toString()),
     };
@@ -195,7 +197,7 @@ export class Prover {
 
     const parsed = JSON.parse('[' + cd + ']');
     const encoded = ethers.AbiCoder.defaultAbiCoder().encode(
-      ['uint[2]', 'uint[2][2]', 'uint[2]', 'uint[4]'],
+      ['uint[2]', 'uint[2][2]', 'uint[2]', 'uint[5]'],
       [parsed[0], parsed[1], parsed[2], parsed[3]]
     );
     return encoded;

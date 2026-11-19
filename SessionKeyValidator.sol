@@ -6,7 +6,7 @@ interface IVerifier {
         uint[2] calldata _pA,
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
-        uint[4] calldata _pubSignals
+        uint[5] calldata _pubSignals
     ) external view returns (bool);
 }
 
@@ -41,6 +41,7 @@ contract SessionKeyValidator {
         uint208 spendLimit;
         uint256 spentSoFar;
         bytes32 merkleRoot;
+        uint256 commitment;
         bool    requireZKProof;
         bool    active;
     }
@@ -61,6 +62,7 @@ contract SessionKeyValidator {
         uint256 durationSec,
         uint256 spendLimit,
         bytes32 merkleRoot,
+        uint256 commitment,
         bool    requireZKProof
     ) external {
         address wallet = msg.sender;
@@ -68,12 +70,14 @@ contract SessionKeyValidator {
         if (durationSec == 0 || durationSec > MAX_DURATION) revert SK_InvalidDuration();
         if (spendLimit == 0)                                revert SK_InvalidSpendLimit();
         if (_sessions[wallet][sessionKey].active)           revert SK_AlreadyExists();
+        if (requireZKProof && commitment == 0) revert SK_InvalidZKProof();
         uint48 expiry = uint48(block.timestamp + durationSec);
         _sessions[wallet][sessionKey] = Session({
             expiry:         expiry,
             spendLimit:     uint208(spendLimit),
             spentSoFar:     0,
             merkleRoot:     merkleRoot,
+            commitment:     commitment,
             requireZKProof: requireZKProof,
             active:         true
         });
@@ -105,13 +109,13 @@ contract SessionKeyValidator {
         bytes32 ethHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
         address recovered = _recover(ethHash, ecdsaSig);
         if (recovered != sessionKey)    return 1;
-        (, uint256 txValue) = _extractTargetValue(userOp.callData);
+        (address target, uint256 txValue) = _extractTargetValue(userOp.callData);
         uint256 newSpent = s.spentSoFar + txValue;
         if (newSpent > uint256(s.spendLimit))
             revert SK_SpendExceeded(txValue, uint256(s.spendLimit) - s.spentSoFar);
         if (s.requireZKProof) {
             if (sig.length <= 85) revert SK_InvalidZKProof();
-            _verifyZKProof(sig[85:], s.merkleRoot, txValue);
+            _verifyZKProof(sig[85:], s.merkleRoot, s.commitment, txValue, target);
         }
         s.spentSoFar = newSpent;
         emit SessionUsed(wallet, sessionKey, txValue, uint256(s.spendLimit) - newSpent);
@@ -140,13 +144,15 @@ contract SessionKeyValidator {
 
     uint256 private constant _SIG_FAIL = 1;
 
-    function _verifyZKProof(bytes calldata zkData, bytes32 expectedMerkleRoot, uint256 txValue) internal view {
-        (uint[2] memory pA, uint[2][2] memory pB, uint[2] memory pC, uint[4] memory pub) =
-            abi.decode(zkData, (uint[2], uint[2][2], uint[2], uint[4]));
+    function _verifyZKProof(bytes calldata zkData, bytes32 expectedMerkleRoot, uint256 expectedCommitment, uint256 txValue, address target) internal view {
+        (uint[2] memory pA, uint[2][2] memory pB, uint[2] memory pC, uint[5] memory pub) =
+            abi.decode(zkData, (uint[2], uint[2][2], uint[2], uint[5]));
+        if (pub[0] != expectedCommitment) revert SK_InvalidZKProof();
         if (bytes32(pub[1]) != expectedMerkleRoot)   revert SK_InvalidZKProof();
         if (pub[2] > block.timestamp + 60)           revert SK_InvalidZKProof();
         if (block.timestamp > pub[2] + 60)           revert SK_InvalidZKProof();
         if (pub[3] != txValue)                       revert SK_InvalidZKProof();
+        if (pub[4] != uint256(uint160(target))) revert SK_InvalidZKProof();
         if (!verifier.verifyProof(pA, pB, pC, pub)) revert SK_InvalidZKProof();
     }
 

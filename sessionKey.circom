@@ -79,7 +79,7 @@ template SessionKeyProof(merkleDepth) {
     signal input expiry;
     signal input spendLimit;
     signal input spentSoFar;
-    signal input targetLeaf;
+    signal input targetContract;
     signal input pathElements[merkleDepth];
     signal input pathIndices[merkleDepth];
 
@@ -100,8 +100,11 @@ template SessionKeyProof(merkleDepth) {
     spend.spendLimit <== spendLimit;
     spend.ok         === 1;
 
+    component tlh = Poseidon(1);
+    tlh.inputs[0] <== targetContract;
+
     component merkle = MerkleProof(merkleDepth);
-    merkle.leaf <== targetLeaf;
+    merkle.leaf <== tlh.out;
     merkle.root <== merkleRoot;
     for (var i = 0; i < merkleDepth; i++) {
         merkle.pathElements[i] <== pathElements[i];
@@ -114,5 +117,6 @@ component main {public [
     commitment,
     merkleRoot,
     currentTime,
-    txValue
+    txValue,
+    targetContract
 ]} = SessionKeyProof(4);

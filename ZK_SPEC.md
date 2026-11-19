@@ -1,51 +1,53 @@
-# ZK_SPEC.md — session-game ZK layer (STAGED — to build)
+# ZK_SPEC.md -- session-game ZK layer (STAGED -- to build)
 
-> Status: OFF sekarang, tapi STAGED untuk dibina (BUKAN park selamanya).
-> Vision black (19 Nov): ZK = lapisan sekuriti merentas stack grovenace, lebih selamat untuk user.
-> Simpan di /root/session-game/. Spec niat + gate sebelum ZK boleh dihidupkan.
-> RULE: jangan hidupkan requireZKProof sebelum SEMUA gate bawah hijau. Chain = kebenaran.
+> Status: OFF sekarang, STAGED untuk dibina. Vision (19 Nov): ZK = lapisan sekuriti merentas stack, lebih selamat untuk user.
+> RULE: jangan hidupkan requireZKProof sebelum SEMUA gate hijau. Chain = kebenaran.
+> AUDIT DIBETULKAN 19 Nov: Finding A lama ("commitment===targetLeaf") = SALAH (hallucinate tanpa prover.js). prover.js dedah leaf=Poseidon(allowedContract)=ALLOWLIST, bukan enrolment commitment. Ganti dgn A'+B.
 
-## 0. KEADAAN SEKARANG (confirmed 19 Nov)
-- App.jsx: merkleRoot=0x01 dummy, requireZKProof=false. _verifyZKProof TAK PERNAH jalan di prod.
-- Circuit sessionKey.circom + Verifier.sol (0x99e..5E3 LIVE, wired ke validator 0xc5c..47cf) + prover.js
-  = deployed tapi kod mati. Live security = ECDSA + spend/expiry on-chain.
+## 0. KEADAAN SEKARANG
+- App.jsx: merkleRoot=0x01 dummy, requireZKProof=false. _verifyZKProof tak pernah jalan.
+- Circuit + Verifier.sol (0x99e..5E3 LIVE, wired validator 0xc5c..47cf) + prover.js = deployed, kod mati.
+- Live security = ECDSA + spend/expiry on-chain.
 
-## 1. SOALAN TERAS (dijawab 19 Nov)
-**ZK proof jamin invariant APA atas ECDSA + spend/expiry on-chain?**
-→ **J-2FA (DIPILIH):** "Session key bocor != keseluruhan akaun bocor". Proof = bukti tahu preimage
-  master-secret yang di-enrol dalam merkle tree wallet. Penyerang curi sessionKey ECDSA SAHAJA tak
-  boleh execute sebab tak tahu master-secret. Ini nilai ZK sebenar untuk gaming (vision merentas stack).
-> AMARAN: ZK tambah sekuriti HANYA kalau circuit betul ikat (Finding A). Circuit pecah = rasa selamat
-> palsu = LEBIH teruk dari ECDSA jujur. Jangan hidupkan atas circuit under-constrained.
+## 1. REKA BENTUK SEBENAR (dari prover.js)
+- commitment=Poseidon(masterKey,sessionAddr,nonce) = identiti session (pub[0]).
+- merkle tree = ALLOWLIST kontrak: leaf=Poseidon(contractAddr), root=s.merkleRoot (set masa createSession).
+- Proof buktikan: (a) tahu preimage commitment, (b) targetContract dalam allowlist, (c) currentTime<expiry, (d) spentSoFar+txValue<=spendLimit.
+- Public=[commitment,merkleRoot,currentTime,txValue] uint[4].
 
-## 2. PRASYARAT FIX (sebelum enable)
-### A [CRITICAL] — targetLeaf tak terikat commitment
-Circuit buktikan "commitment=Poseidon(masterKey,sessionAddr,nonce)" DAN "targetLeaf in tree" sebagai
-dua fakta TERPISAH — tiada constraint sambung. Proof lulus walau commitment & leaf zero kaitan.
-- FIX R1: tambah selepas `commitment === cmt.out;` (baris ~90):
-  `commitment === targetLeaf;`
-- Kesan: recompile -> trusted setup BARU (ptau -> final.zkey ke /root/web3-data, bukan / ketat)
-  -> redeploy Groth16Verifier (uint[4]) -> kemas validator.verifier.
+## 2. SOALAN TERAS (dijawab) = J-2FA
+Session key bocor != akaun bocor. Proof = bukti tahu master-secret enrolled + kontrak sasaran dibenarkan.
+AMARAN: ZK tambah sekuriti HANYA kalau binding betul. Binding pecah = rasa selamat palsu = LEBIH teruk dari ECDSA jujur.
 
-### B [HIGH] — proof tak terikat actor/tx
-_verifyZKProof semak pub[1]=merkleRoot, pub[2]=time, pub[3]=txValue; pub[0]=commitment TAK disemak.
-Proof mudah-alih merentas session kongsi merkleRoot+txValue.
-- FIX: (a) dengan A, merkle membership ikat commitment ke root enrolled; (b) tambah binding ke
-  wallet/sessionKey/userOpHash sebagai public signal + require on-chain (R2 Cycle 2/3).
+## 3. PRASYARAT FIX (sebelum enable)
+### A' [CRITICAL] -- kontrak sasaran TAK terikat panggilan sebenar
+targetLeaf = private, BUKAN public. _verifyZKProof tak check target; validateUserOp:108 BUANG target.
+Prover buktikan "kontrak A dalam allowlist" sementara userOp panggil kontrak B. Allowlist = hiasan.
+FIX:
+- Circuit: tukar `signal input targetLeaf` -> `signal input targetContract`; kira leaf=Poseidon(targetContract) DALAM circuit; jadikan targetContract PUBLIC. Public -> uint[5]: [commitment,merkleRoot,currentTime,txValue,targetContract].
+- Contract: _verifyZKProof check pub[4]==uint256(uint160(target sebenar dari callData)). validateUserOp hantar target (jangan buang).
+
+### B [HIGH] -- commitment TAK terikat session
+pub[0]=commitment tak disemak on-chain. 2FA tak kuat-kuasa; sesiapa jana commitment sendiri.
+FIX:
+- Contract: Session struct tambah commitment (uint256/bytes32); createSession terima + simpan; _verifyZKProof check pub[0]==s.commitment.
+- (Opsyen hardening) ikat sessionAddr==sessionKey.
 
 ### Dead-crypto [MED]
-expiry/spendLimit/spentSoFar circuit PRIVATE, prover kawal penuh -> check circuit vacuous (on-chain
-re-enforce selamatkan tapi menipu pembaca). Pilih: ikat ke state on-chain, ATAU buang dari circuit.
+expiry/spendLimit/spentSoFar circuit PRIVATE, prover kawal penuh -> check circuit vacuous (on-chain re-enforce selamatkan tapi menipu). Pilih: ikat ke state on-chain ATAU buang dari circuit.
 _extractTargetValue offset tetap callData[36:68] -> executeBatch boleh sorok txValue. Sahkan jenis account.
 
-## 3. GATE ENABLE (semua WAJIB hijau — bukti terminal)
-1. Fix A + CARA UJI empirik: jana 2 proof SAMA (merkleRoot,targetLeaf,path,currentTime,txValue), BEZA
-   (masterKey,sessionAddr,nonce). Lepas fix, proof kedua mesti DITOLAK (sebelum fix kedua lulus = bug).
-2. Triple-cycle R2 bersih atas circuit baru.
-3. Frontend bina merkleRoot SEBENAR dari commitment enrolled (bukan 0x01) + requireZKProof=true.
-4. e2e on-chain: create(ZK on) -> action proof sah lulus -> action proof palsu/curi DITOLAK.
-5. Dep ZK toolchain: npm audit high ditangani/dikunci (R6 supply-chain).
+## 4. KESAN TEKNIKAL
+Public uint[4] -> uint[5] => Verifier BARU (regenerate), IVerifier uint[5], _verifyZKProof decode uint[5], redeploy Verifier+Validator (Session+commitment). Trusted setup BARU (circuit berubah). prover.js: hantar targetContract raw (bukan targetLeaf pre-hash).
 
-## 4. KAIT STACK (scope)
-session-game = L3 grovenace. ZK_SPEC ni milik session-game SAHAJA. Jangan campur circuit CLP
-(identity_kyc) atau zkBounty (exploit_knowledge) — tiga stack, tiga circuit, tiga model.
+## 5. GATE ENABLE (semua WAJIB hijau -- bukti terminal)
+1. snarkjs r1cs info: constraint <= kapasiti ptau. Guna pot12_hez_final.ptau (pot12_final=INVALID alpha1 per master).
+2. Triple-cycle R2 bersih circuit baru.
+3. CARA UJI A': proof untuk targetContract X, userOp panggil Y!=X -> on-chain REVERT (pub[4]!=target).
+4. CARA UJI B: proof commitment lain dari s.commitment -> REVERT.
+5. Frontend: bina merkleRoot SEBENAR dari allowedContracts (bukan 0x01), requireZKProof=true, hantar commitment+targetContract.
+6. e2e on-chain: create -> action sah lulus -> action luar-allowlist/proof-curi DITOLAK.
+7. Dep ZK toolchain: npm audit high dikunci (R6).
+
+## 6. KAIT STACK
+session-game = L3 grovenace. ZK_SPEC milik session-game SAHAJA. Jangan campur circuit CLP/zkBounty.
