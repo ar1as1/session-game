@@ -1,15 +1,28 @@
 {
-  "name": "session-game",
+  "name": "@ar1as1/session-key-validator",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "description": "ZK session keys for Web3 gaming — ERC-4337 Account Abstraction, no MetaMask popups",
+  "main": "prover.js",
+  "type": "module",
+  "keywords": [
+    "zk-proof",
+    "session-keys",
+    "web3-gaming",
+    "account-abstraction",
+    "erc-4337",
+    "gasless",
+    "metamask",
+    "ethereum",
+    "circom",
+    "groth16"
+  ],
+  "author": "ar1as1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ar1as1/session-game.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "homepage": "https://github.com/ar1as1/session-game#readme",
   "dependencies": {
     "circomlib": "^2.0.5",
     "circomlibjs": "^0.1.7",
