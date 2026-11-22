@@ -1,159 +1,40 @@
-# 🎮 Session Key Validator — ZK-Powered Web3 Gaming
+# session-game
 
-> **Zero popup. Zero friction. Full on-chain security.**
-> Sign once. Play forever. No more MetaMask interruptions mid-game.
+ZK session keys for Web3 gaming — gasless, no per-action wallet popup. ERC-4337 Account Abstraction + Groth16 (Circom/snarkjs). A session key acts for the player, bounded by a spend limit and a contract allowlist, every action gated by a zero-knowledge proof.
 
----
+npm: `@ar1as1/session-key-validator`
 
-## 🧩 The Problem
+## How it works
+A player creates a **session**: a temporary key authorized to call a fixed **allowlist** of contracts, up to a **spend limit**, until an **expiry**. Each signed action carries a Groth16 proof attesting, in zero knowledge:
+- the target contract is a member of the allowlist (Merkle membership),
+- the session commitment `= Poseidon(masterKey, sessionAddr, nonce)` matches the on-chain session,
 
-Every Web3 game today forces players to sign a transaction for every action —
-shoot an enemy, open a chest, buy an item. MetaMask pops up. Game breaks.
-Players quit. Developers lose users.
+without revealing the master key. `SessionKeyValidator` verifies the proof on-chain via `Groth16Verifier`, and enforces `onlyEntryPoint`, the allowlist, the spend limit, and the ZK requirement.
 
-## ✅ The Solution
-
-**Session Keys + Zero-Knowledge Proofs + Account Abstraction (ERC-4337)**
-
-1. **Player signs once** at game start
-2. **Session key is minted** with strict rules:
-   - ⏱️ Valid for N hours only
-   - 💰 Max spend limit enforced on-chain
-   - 📋 Whitelisted contracts only — cannot touch other wallets
-3. **All in-game actions auto-sign** silently in background
-4. **ZK proof validates** each transaction cryptographically
-5. **Session expires automatically** — no manual cleanup needed
-
----
-
-## 🏗️ Architecture
-Player Wallet (MetaMask)
-│
-│ sign once
-▼
-SessionKeyValidator.sol ◄──── Groth16Verifier.sol (ZK)
-│                              │
-│                    Circom Circuit (sessionKey.circom)
-│
-▼
-Session Key (ephemeral wallet in browser)
-│
-│ auto-sign (no popup)
-▼
-ERC-4337 Bundler → EntryPoint → Game Contract
----
-
-## 📦 Deployed Contracts — Sepolia Testnet
-
+## Deployed — Sepolia (chainId 11155111)
 | Contract | Address |
 |---|---|
-| `Groth16Verifier` | `0x645a824560aEF5f7915630eb9bd40e8226298eee` |
-| `SessionKeyValidator` | `0x5c2736F56506526e76E40D88981E4E41B0FA8807` |
+| SessionKeyValidator | `0xACE7ca8524434270E5A5A8c8A405F0D309967dFc` |
+| Groth16Verifier | `0x5D4925780a7D49768b471c8afD78C894fC2E35F2` |
+| EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
 
-- **Network:** Ethereum Sepolia Testnet (Chain ID: 11155111)
-- **Explorer:** [Sepolia Etherscan](https://sepolia.etherscan.io)
+Deployed from a clean deployer; earlier deployments are superseded.
 
----
+## Security model
+A leaked session key can spend **at most** the session spend limit, **only** to allowlisted contracts — never the player's full wallet (capped blast radius).
 
-## 🔐 Security Model
+Verified by triple-cycle adversarial testing (empirical):
+- **Binding** — all 5 public signals (commitment, merkleRoot, time, value, target) bound to the proof; tampering any invalidates it.
+- **Soundness** — a prover cannot forge membership for a non-allowlisted target, nor a mismatched commitment; circuit constraints reject both.
+- **On-chain** — valid actions verify; a leaked-key redirect to a non-allowlisted target reverts (target binding); a wrong-commitment proof reverts (commitment binding); non-EntryPoint callers are rejected.
 
-| Layer | Mechanism |
-|---|---|
-| Session isolation | Each session = fresh ephemeral keypair |
-| Spend enforcement | On-chain `spentSoFar ≤ spendLimit` |
-| Contract whitelist | Poseidon Merkle tree, depth 4 |
-| Time-bound | `expiry` enforced in EVM `block.timestamp` |
-| ZK proof | Groth16 — commitment, merkle root, time, value |
-| Key storage | AES-256-GCM encrypted (browser), file-scoped (Node) |
+See `THREAT_MODEL.md`.
 
----
+## Build
+forge build
+circom sessionKey.circom --r1cs --wasm --sym -o .
 
-## 🚀 Quick Start
-
-### Prerequisites
-```bash
-node >= 18
-foundry >= 1.5.1
-```
-
-### Install
-```bash
-git clone https://github.com/ar1as1/session-game
-cd session-game
-npm install
-```
-
-### Generate ZK Proof & Create Session
-```javascript
-import { Prover } from './prover.js';
-
-const prover = await new Prover(RPC_URL, VALIDATOR_ADDRESS).init();
-
-// Sign ONCE — 1 MetaMask popup
-await prover.createSession(
-  masterSigner,
-  7200,                          // 2 hours
-  ethers.parseEther('0.01'),     // max 0.01 ETH spend
-  ['0xGameContract...'],         // whitelisted contracts
-  true                           // require ZK proof
-);
-
-// All subsequent actions — ZERO popup
-const userOp = await prover.signAction(
-  walletAddress,
-  gameContractAddress,
-  callData
-);
-```
+groth16 trusted setup → sessionKey_final.zkey → Verifier.sol ; proofs via prover.js
 
 ---
-
-## 📁 Project Structure
-session-game/
-├── sessionKey.circom          # ZK circuit definition
-├── sessionKey_final.zkey      # Groth16 proving key
-├── verification_key.json      # On-chain verification key
-├── Verifier.sol               # Groth16 verifier (auto-generated)
-├── SessionKeyValidator.sol    # Core session logic
-├── prover.js                  # Node.js SDK
-├── Deploy.s.sol               # Foundry deploy script
-└── DeployValidator.s.sol      # Validator-only deploy script
----
-
-## 🧪 ZK Circuit
-
-**Constraints verified per transaction:**
-- `commitment = Poseidon(masterKey, sessionAddr, nonce)`
-- `merkleRoot` matches whitelisted contract tree
-- `currentTime < expiry`
-- `spentSoFar + txValue ≤ spendLimit`
-- Merkle inclusion proof (depth 4, 16 leaves)
-
----
-
-## 🛡️ Security & Audit
-
-Audited with adversarial triple-cycle methodology (state / resource / trust). Every claim is reproducible on Sepolia — **findings are real or explicitly stated as not-found; no fabricated attacks.**
-
-**Threat model:** see [THREAT_MODEL.md](./THREAT_MODEL.md) — maps session-game against the 5 classes that drain audited giants (access-control, concentrated-TVL, oracle, governance, logic) and which are structurally eliminated here.
-
-**Drain resistance (PROVEN, `node test_drain.mjs`):** a fully-compromised session key **cannot**:
-- redirect spend to an attacker contract — reverts `SK_InvalidZKProof` (target bound in the proof)
-- forge the session identity — reverts `SK_InvalidZKProof` (commitment bound on-chain)
-- exceed the cap — reverts `SK_SpendExceeded`
-
-Max exposure from a stolen session key = `spendLimit` to whitelisted contracts only — **not the wallet, not an attacker.**
-
-**Reproduce:**
-node test_AB.cjs # ZK binding: tamper targetContract/commitment -> proof invalid
-node test_e2e.mjs # on-chain: valid passes; redirect & bad-commitment revert
-node test_drain.mjs # drain attempts all blocked
-node test_C.mjs # known limitation C (below)
-
-**Known limitation (disclosed):** **C — grief/DoS, not a drain.** `validateUserOp` lacks an `onlyEntryPoint` guard, so a captured UserOp can be replayed to inflate `spentSoFar` and exhaust a session. **No funds move.** Fix = canonical ERC-4337 EntryPoint. Tracked in THREAT_MODEL.md.
-
-_Status: Sepolia testnet. Not third-party audited. Not for mainnet value._
-
-## 📜 License
-
-MIT — Built for the Web3 gaming ecosystem.
+Testnet deployment. Not audited for mainnet.

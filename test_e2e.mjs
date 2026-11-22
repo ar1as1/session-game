@@ -5,6 +5,7 @@ import { buildPoseidon } from "circomlibjs";
 import * as snarkjs from "snarkjs";
 
 const RPC = process.env.RPC || "https://ethereum-sepolia-rpc.publicnode.com";
+const EP="0x0000000071727De22E5E9d8BAf0edAc6f37da032";
 let VALIDATOR = process.env.VALIDATOR;
 if (!VALIDATOR) { try { VALIDATOR = readFileSync("/tmp/val.log","utf8").match(/Deployed to: (0x[a-fA-F0-9]{40})/)[1]; } catch {} }
 if (!VALIDATOR) throw new Error("set VALIDATOR=0x..807");
@@ -53,7 +54,7 @@ console.log("    sessionKey:",sk.address);
 console.log("\n[1] HAPPY PATH — target X (allowlisted):");
 const opX=await prover.signAction(masterAddr,X,"0x",WEI);
 const hX=hashUserOp(opX);
-try{ const r=await validator.validateUserOp.staticCall(toArr(opX),hX,0);
+try{ const r=await validator.validateUserOp.staticCall(toArr(opX),hX,0,{from:EP});
   console.log("    =>", ((BigInt(r)&1n)===0n)?"VALID \u2713 (mesti VALID)":"INVALID \u2717 (patut lulus)");
 }catch(e){ console.log("    REVERT \u2717 (patut lulus):", e.shortMessage||e.message); }
 const zkX="0x"+opX.signature.slice(2).slice((20+65)*2); // zkData utk X
@@ -63,7 +64,7 @@ console.log("\n[2] ATTACK A' — sessionKey bocor, pesong ke Y + lampir proof-X:
 const opY=buildUserOp(masterAddr,Y,WEI);
 const hY=hashUserOp(opY);
 opY.signature=ethers.concat([sk.address, await sk.signMessage(ethers.getBytes(hY)), zkX]);
-try{ await validator.validateUserOp.staticCall(toArr(opY),hY,0);
+try{ await validator.validateUserOp.staticCall(toArr(opY),hY,0,{from:EP});
   console.log("    \u26A0 TAK REVERT = CE DRAIN! pub[4]=X diterima utk Y. A' GAGAL.");
 }catch(e){ console.log("    REVERT \u2713 (A' tahan, pub[4]=X != Y):", e.shortMessage||e.reason||"SK_InvalidZKProof"); }
 
@@ -84,7 +85,7 @@ const bparsed=JSON.parse('['+await snarkjs.groth16.exportSolidityCallData(bp,bpu
 const zkBad=ethers.AbiCoder.defaultAbiCoder().encode(['uint[2]','uint[2][2]','uint[2]','uint[5]'],[bparsed[0],bparsed[1],bparsed[2],bparsed[3]]);
 const opB=buildUserOp(masterAddr,X,WEI); const hB=hashUserOp(opB);
 opB.signature=ethers.concat([sk.address, await sk.signMessage(ethers.getBytes(hB)), zkBad]);
-try{ await validator.validateUserOp.staticCall(toArr(opB),hB,0);
+try{ await validator.validateUserOp.staticCall(toArr(opB),hB,0,{from:EP});
   console.log("    \u26A0 TAK REVERT = CE! commitment salah diterima. B GAGAL.");
 }catch(e){ console.log("    REVERT \u2713 (B tahan, pub[0] != s.commitment):", e.shortMessage||e.reason||"SK_InvalidZKProof"); }
 

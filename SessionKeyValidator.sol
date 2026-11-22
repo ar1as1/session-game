@@ -35,6 +35,7 @@ contract SessionKeyValidator {
     error SK_ZeroAddress();
     error SK_InvalidDuration();
     error SK_InvalidSpendLimit();
+    error SK_UnsupportedCall();
 
     struct Session {
         uint48  expiry;
@@ -50,11 +51,13 @@ contract SessionKeyValidator {
     mapping(address => address[]) private _sessionIndex;
 
     IVerifier public immutable verifier;
+    address public immutable entryPoint;
     uint256 public constant MAX_DURATION = 86400;
 
-    constructor(address _verifier) {
-        if (_verifier == address(0)) revert SK_ZeroAddress();
+    constructor(address _verifier, address _entryPoint) {
+        if (_verifier == address(0) || _entryPoint == address(0)) revert SK_ZeroAddress();
         verifier = IVerifier(_verifier);
+        entryPoint = _entryPoint;
     }
 
     function createSession(
@@ -68,9 +71,9 @@ contract SessionKeyValidator {
         address wallet = msg.sender;
         if (sessionKey == address(0))                       revert SK_ZeroAddress();
         if (durationSec == 0 || durationSec > MAX_DURATION) revert SK_InvalidDuration();
-        if (spendLimit == 0)                                revert SK_InvalidSpendLimit();
+        if (spendLimit == 0 || spendLimit > type(uint208).max)                                revert SK_InvalidSpendLimit();
         if (_sessions[wallet][sessionKey].active)           revert SK_AlreadyExists();
-        if (requireZKProof && commitment == 0) revert SK_InvalidZKProof();
+        if (!requireZKProof || commitment == 0) revert SK_InvalidZKProof();
         uint48 expiry = uint48(block.timestamp + durationSec);
         _sessions[wallet][sessionKey] = Session({
             expiry:         expiry,
@@ -98,6 +101,7 @@ contract SessionKeyValidator {
         bytes32 userOpHash,
         uint256
     ) external returns (uint256) {
+        if (msg.sender != entryPoint) return 1;
         bytes calldata sig = userOp.signature;
         if (sig.length < 85) return 1;
         address sessionKey = address(bytes20(sig[0:20]));
@@ -109,6 +113,7 @@ contract SessionKeyValidator {
         bytes32 ethHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", userOpHash));
         address recovered = _recover(ethHash, ecdsaSig);
         if (recovered != sessionKey)    return 1;
+        if (userOp.callData.length < 4 || bytes4(userOp.callData[0:4]) != 0xb61d27f6) revert SK_UnsupportedCall();
         (address target, uint256 txValue) = _extractTargetValue(userOp.callData);
         uint256 newSpent = s.spentSoFar + txValue;
         if (newSpent > uint256(s.spendLimit))
