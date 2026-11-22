@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
+import { Prover } from "./prover.js";
 
-const VALIDATOR = "0x5c2736F56506526e76E40D88981E4E41B0FA8807";
-const SEPOLIA_RPC = "https://sepolia.drpc.org";
+const VALIDATOR = "0xb08964726F3CB2335Acd5AdabB25241dcA364569";
+const SEPOLIA_RPC = "https://ethereum-sepolia-rpc.publicnode.com";
 
 const VALIDATOR_ABI = [
   "function createSession(address,uint256,uint256,bytes32,uint256,bool)",
@@ -54,46 +55,39 @@ export default function App() {
     if (!wallet) return;
     setLoading("create");
     try {
-      const sessionWallet = ethers.Wallet.createRandom();
-      const contract = new ethers.Contract(VALIDATOR, VALIDATOR_ABI, wallet.signer);
-      const merkleRoot = ethers.zeroPadValue("0x01", 32);
-      const durationSec = 7200;
-      const spendLimit = ethers.parseEther("0.01");
-
-      addLog("info", "creating session — 1 popup only...");
-      const tx = await contract.createSession(
-        sessionWallet.address, durationSec, spendLimit, merkleRoot, 0, false
+      const prover = new Prover(wallet.provider, VALIDATOR);
+      await prover.init();
+      const allowlist = ["0x1111111111111111111111111111111111111111"];
+      addLog("info", "building ZK merkle + commitment...");
+      const s = await prover.createSession(
+        wallet.signer, 7200, ethers.parseEther("0.01"), allowlist, true
       );
-      addLog("info", "waiting for tx: " + tx.hash.slice(0,18) + "...");
-      await tx.wait();
-      addLog("ok", "session active ✓");
-
-      const s = {
-        address: sessionWallet.address,
-        privateKey: sessionWallet.privateKey,
-        spendLimitWei: spendLimit.toString(),
-        spentSoFar: "0",
-        expiresAt: Date.now() + durationSec * 1000
-      };
+      addLog("ok", "session active ✓ — ZK on (requireZKProof=true)");
+      addLog("info", "merkleRoot: " + s.merkleRootHex.slice(0,18) + "...");
+      window.__prover = prover;
       setSession(s);
       setTab("status");
     } catch(e) {
-      addLog("err", e.message.slice(0, 80));
+      addLog("err", (e.shortMessage || e.message || "error").slice(0,120));
     }
     setLoading("");
   }
 
   async function signAction() {
-    if (!session) return;
+    if (!session || !window.__prover) return;
     setLoading("sign");
-    addLog("info", "signing action — no popup...");
+    addLog("info", "generating ZK proof in browser (no popup)...");
     try {
-      await new Promise(r => setTimeout(r, 800));
-      addLog("ok", "✓ auto-signed — zero popup");
-      addLog("ok", "session key: " + session.address.slice(0,14) + "...");
-      setSession(p => ({...p, spentSoFar: (BigInt(p.spentSoFar) + ethers.parseEther("0.001")).toString()}));
+      const target = "0x1111111111111111111111111111111111111111";
+      const r = await window.__prover.signActionVerify(wallet.addr, target, "0x", ethers.parseEther("0.001"));
+      if (r.valid) {
+        addLog("ok", "✓ ZK proof VALID on-chain (validateUserOp staticCall)");
+        addLog("info", "zero popup · proof verified · execution needs bundler");
+      } else {
+        addLog("err", "validateUserOp invalid (ret=" + r.ret + ")");
+      }
     } catch(e) {
-      addLog("err", e.message);
+      addLog("err", (e.shortMessage || e.message || "error").slice(0,120));
     }
     setLoading("");
   }
