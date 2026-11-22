@@ -22,6 +22,7 @@ const fs = require("fs");
     expiry:(now+3600).toString(),spendLimit:"1000000",spentSoFar:"0",targetContract:targetContract.toString(),
     pathElements:pe,pathIndices:pi};
   const {proof,publicSignals}=await snarkjs.groth16.fullProve(input,"sessionKey_js/sessionKey.wasm","sessionKey_final.zkey");
+  fs.writeFileSync("proof.json",JSON.stringify(proof));fs.writeFileSync("public.json",JSON.stringify(publicSignals));
   const vkey=JSON.parse(fs.readFileSync("verification_key.json"));
   console.log("publicSignals:",publicSignals);
   console.log("[1] proof SAH        :",await snarkjs.groth16.verify(vkey,publicSignals,proof),"(mesti true)");
