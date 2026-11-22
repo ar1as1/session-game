@@ -14,8 +14,8 @@ without revealing the master key. `SessionKeyValidator` verifies the proof on-ch
 ## Deployed — Sepolia (chainId 11155111)
 | Contract | Address |
 |---|---|
-| SessionKeyValidator | `0xACE7ca8524434270E5A5A8c8A405F0D309967dFc` |
-| Groth16Verifier | `0x5D4925780a7D49768b471c8afD78C894fC2E35F2` |
+| SessionKeyValidator | `0xb08964726F3CB2335Acd5AdabB25241dcA364569` |
+| Groth16Verifier | `0x6b5137012026CC53f41DeD099444a0e43D2aE276` |
 | EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
 
 Deployed from a clean deployer; earlier deployments are superseded.
