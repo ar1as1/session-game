@@ -8,3 +8,4 @@ active_session.json
 witness.wtns
 *.wtns
 sessionKey_0.zkey
+*.bak-*
