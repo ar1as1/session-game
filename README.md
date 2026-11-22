@@ -47,8 +47,8 @@ ERC-4337 Bundler → EntryPoint → Game Contract
 
 | Contract | Address |
 |---|---|
-| `Groth16Verifier` | `0x99e61B9dC9C6889Dd2e249CC6183B6fa7A8795E3` |
-| `SessionKeyValidator` | `0xc5655348C4E6e77AFF2BBb03A5758CaC205347Cf` |
+| `Groth16Verifier` | `0x645a824560aEF5f7915630eb9bd40e8226298eee` |
+| `SessionKeyValidator` | `0x5c2736F56506526e76E40D88981E4E41B0FA8807` |
 
 - **Network:** Ethereum Sepolia Testnet (Chain ID: 11155111)
 - **Explorer:** [Sepolia Etherscan](https://sepolia.etherscan.io)
@@ -130,6 +130,29 @@ session-game/
 - Merkle inclusion proof (depth 4, 16 leaves)
 
 ---
+
+## 🛡️ Security & Audit
+
+Audited with adversarial triple-cycle methodology (state / resource / trust). Every claim is reproducible on Sepolia — **findings are real or explicitly stated as not-found; no fabricated attacks.**
+
+**Threat model:** see [THREAT_MODEL.md](./THREAT_MODEL.md) — maps session-game against the 5 classes that drain audited giants (access-control, concentrated-TVL, oracle, governance, logic) and which are structurally eliminated here.
+
+**Drain resistance (PROVEN, `node test_drain.mjs`):** a fully-compromised session key **cannot**:
+- redirect spend to an attacker contract — reverts `SK_InvalidZKProof` (target bound in the proof)
+- forge the session identity — reverts `SK_InvalidZKProof` (commitment bound on-chain)
+- exceed the cap — reverts `SK_SpendExceeded`
+
+Max exposure from a stolen session key = `spendLimit` to whitelisted contracts only — **not the wallet, not an attacker.**
+
+**Reproduce:**
+node test_AB.cjs # ZK binding: tamper targetContract/commitment -> proof invalid
+node test_e2e.mjs # on-chain: valid passes; redirect & bad-commitment revert
+node test_drain.mjs # drain attempts all blocked
+node test_C.mjs # known limitation C (below)
+
+**Known limitation (disclosed):** **C — grief/DoS, not a drain.** `validateUserOp` lacks an `onlyEntryPoint` guard, so a captured UserOp can be replayed to inflate `spentSoFar` and exhaust a session. **No funds move.** Fix = canonical ERC-4337 EntryPoint. Tracked in THREAT_MODEL.md.
+
+_Status: Sepolia testnet. Not third-party audited. Not for mainnet value._
 
 ## 📜 License
 
