@@ -9,3 +9,4 @@ witness.wtns
 *.wtns
 sessionKey_0.zkey
 *.bak-*
+last_tx.txt

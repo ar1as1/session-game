@@ -101,7 +101,7 @@ contract SessionKeyValidator {
         bytes32 userOpHash,
         uint256
     ) external returns (uint256) {
-        if (msg.sender != entryPoint) return 1;
+        if (msg.sender != userOp.sender) return 1;
         bytes calldata sig = userOp.signature;
         if (sig.length < 85) return 1;
         address sessionKey = address(bytes20(sig[0:20]));
